@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Nunito', sans-serif;
+  --font-serif: 'DM Serif Display', serif;
+
+  --color-bg: #F7F4F0;
+  --color-card: #FFFFFF;
+  --color-primary: #7C6BE8;
+  --color-primary-light: #EDE9FF;
+  --color-rose: #F4A8B8;
+  --color-rose-light: #FEF0F4;
+  --color-text: #2A2730;
+  --color-muted: #9B94A8;
+  --color-border: #E8E3DD;
+  --color-surface: #FDFCFB;
+}
+
+html, body, #root {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  background-color: #F7F4F0;
+  color: #2A2730;
+  font-family: 'Nunito', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+.sheet-enter {
+  animation: sheetUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes sheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

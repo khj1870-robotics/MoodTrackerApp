@@ -1,0 +1,10 @@
+{
+  "description": "Track emotions, medical visits, and therapy sessions with detailed records and calendar views to support mental health management and self-awareness.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
