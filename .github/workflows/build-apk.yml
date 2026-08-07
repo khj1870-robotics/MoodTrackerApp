@@ -41,8 +41,12 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug
 
-      - name: Print APK signing fingerprint
-        run: keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify APK signing certificate and version
+        run: |
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)"
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -E "versionCode|versionName"
 
       - uses: actions/upload-artifact@v4
         with:
