@@ -1,7 +1,12 @@
-export type EmotionKey =
-  | 'happy' | 'calm' | 'sad' | 'anxious' | 'angry'
-  | 'depressed' | 'lethargic' | 'confused' | 'irritated'
-  | 'lonely' | 'elevated' | 'fearful';
+export interface EmotionCard {
+  id: string;
+  label: string;
+  emoji: string;
+  color: string;
+  bg: string;
+  dot: string; // calendar dot color
+  direction?: number; // 1 = positive, -1 = negative (used for stats trend). Defaults to -1.
+}
 
 export interface MoodAnswer {
   question: string;
@@ -11,7 +16,7 @@ export interface MoodAnswer {
 export interface MoodEntry {
   id: string;
   date: string;
-  emotion: EmotionKey;
+  emotion: string; // references EmotionCard.id
   intensity: number; // 1–5
   answers: MoodAnswer[];
   note?: string;
@@ -33,10 +38,26 @@ export interface HospitalVisit {
   nextAppointment?: string;
 }
 
+export interface Diagnosis {
+  id: string;
+  name: string;
+}
+
+export type DocumentType = '조제내역서' | '진단서' | '처방전' | '영수증' | '기타';
+
+export interface MedicalDocument {
+  id: string;
+  type: DocumentType;
+  date: string;
+  imageDataUrl: string;
+  memo?: string;
+}
+
 export interface HospitalData {
-  diagnoses: string[];
+  diagnoses: Diagnosis[];
   medications: Medication[];
   visits: HospitalVisit[];
+  documents: MedicalDocument[];
 }
 
 export interface TherapySession {
@@ -62,6 +83,7 @@ export interface TherapyProgram {
 
 export interface AppData {
   moodEntries: MoodEntry[];
+  emotionCards: EmotionCard[];
   hospital: HospitalData;
   therapyPrograms: TherapyProgram[];
 }

@@ -1,31 +1,40 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import type { AppData, MoodEntry } from '../types';
-import { EMOTION_MAP, EMOTIONS } from '../emotions';
+import { getEmotionCard } from '../emotions';
+import { analyzeMoodPattern } from '../pattern';
+import Sheet from '../components/Sheet';
+import FullPage from '../components/FullPage';
+import MoodEntryDetail from '../components/MoodEntryDetail';
 
 interface Props { data: AppData; }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const MONTHS = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 
-// Positive = high value, Negative = low value for trend
-const INTENSITY_DIRECTION: Record<string, number> = {
-  happy: 1, calm: 1, elevated: 1,
-  sad: -1, anxious: -1, angry: -1, depressed: -1,
-  lethargic: -1, confused: -1, irritated: -1, lonely: -1, fearful: -1,
-};
+const MOOD_DOT_COLOR = '#FFA94D';
+const HOSPITAL_DOT_COLOR = '#4A7CCC';
+const THERAPY_DOT_COLOR = '#7C6BE8';
+const UPCOMING_DOT_COLOR = '#E8A0A8';
 
-function moodScore(entry: MoodEntry) {
-  const dir = INTENSITY_DIRECTION[entry.emotion] ?? -1;
+function moodScore(entry: MoodEntry, data: AppData) {
+  const def = getEmotionCard(data.emotionCards, entry.emotion);
+  const dir = def.direction ?? -1;
   return dir * entry.intensity;
 }
 
 export default function Calendar({ data }: Props) {
   const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(todayStr);
   const [tab, setTab] = useState<'calendar' | 'stats'>('calendar');
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const [detailEntry, setDetailEntry] = useState<MoodEntry | null>(null);
+  const [showAllEntries, setShowAllEntries] = useState(false);
+
+  const touchStartX = useRef<number | null>(null);
 
   const entriesByDate = useMemo(() => {
     const map: Record<string, MoodEntry[]> = {};
@@ -60,9 +69,18 @@ export default function Calendar({ data }: Props) {
   const prevMonth = () => { if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1); };
 
-  const todayStr = now.toISOString().split('T')[0];
+  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (dx > 50) prevMonth();
+    else if (dx < -50) nextMonth();
+  };
 
   const selectedEntries = selectedDay ? (entriesByDate[selectedDay] ?? []) : [];
+  const selectedIsNextVisit = !!selectedDay && nextVisitDate === selectedDay && !visitDates.has(selectedDay);
+  const selectedIsNextTherapy = !!selectedDay && nextTherapyDate === selectedDay && !sessionDates.has(selectedDay);
 
   // Stats: last 30 days mood score trend (daily avg)
   const trendData = useMemo(() => {
@@ -73,24 +91,28 @@ export default function Calendar({ data }: Props) {
       const entries = entriesByDate[key];
       const label = `${d.getMonth() + 1}/${d.getDate()}`;
       if (entries && entries.length) {
-        const avg = entries.reduce((s, e) => s + moodScore(e), 0) / entries.length;
+        const avg = entries.reduce((s, e) => s + moodScore(e, data), 0) / entries.length;
         days.push({ date: key, label, score: Math.round(avg * 10) / 10 });
       } else {
         days.push({ date: key, label, score: null });
       }
     }
     return days.filter((_, i) => i % 3 === 0); // show every 3 days
-  }, [entriesByDate]);
+  }, [entriesByDate, data]);
 
   // Emotion frequency
   const freqData = useMemo(() => {
-    return EMOTIONS.map(e => ({
+    return data.emotionCards.map(e => ({
       label: e.label,
       emoji: e.emoji,
-      count: data.moodEntries.filter(m => m.emotion === e.key).length,
+      count: data.moodEntries.filter(m => m.emotion === e.id).length,
       color: e.dot,
     })).filter(e => e.count > 0).sort((a, b) => b.count - a.count).slice(0, 7);
-  }, [data.moodEntries]);
+  }, [data.moodEntries, data.emotionCards]);
+
+  const pattern = useMemo(() => analyzeMoodPattern(data.moodEntries, data.emotionCards), [data.moodEntries, data.emotionCards]);
+
+  const yearOptions = Array.from({ length: 13 }, (_, i) => now.getFullYear() - 10 + i);
 
   return (
     <div className="flex flex-col h-full">
@@ -119,15 +141,18 @@ export default function Calendar({ data }: Props) {
             {/* Month nav */}
             <div className="flex items-center justify-between mb-4">
               <button onClick={prevMonth} className="w-9 h-9 rounded-xl flex items-center justify-center text-[#7C6BE8] font-bold transition-all active:scale-90" style={{ background: '#F0EEFF' }}>‹</button>
-              <h2 className="text-lg font-black text-[#2A2730]">{year}년 {MONTHS[month]}</h2>
+              <button onClick={() => setShowYearPicker(true)} className="text-lg font-black text-[#2A2730] transition-all active:scale-95">
+                {year}년 {MONTHS[month]}
+              </button>
               <button onClick={nextMonth} className="w-9 h-9 rounded-xl flex items-center justify-center text-[#7C6BE8] font-bold transition-all active:scale-90" style={{ background: '#F0EEFF' }}>›</button>
             </div>
 
             {/* Legend */}
             <div className="flex flex-wrap gap-3 mb-3 text-xs text-[#9B94A8] font-semibold">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#4A7CCC] inline-block" />진료</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#7C6BE8] inline-block" />상담</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#E8A0A8] inline-block" />예정</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: MOOD_DOT_COLOR }} />감정기록</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: HOSPITAL_DOT_COLOR }} />진료</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: THERAPY_DOT_COLOR }} />상담</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: UPCOMING_DOT_COLOR }} />예정</span>
             </div>
 
             {/* Weekday headers */}
@@ -138,11 +163,11 @@ export default function Calendar({ data }: Props) {
             </div>
 
             {/* Calendar cells */}
-            <div className="grid grid-cols-7 gap-y-1 mb-4">
+            <div className="grid grid-cols-7 gap-y-1 mb-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
               {cells.map((day, idx) => {
                 if (!day) return <div key={`empty-${idx}`} />;
                 const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const dayEntries = entriesByDate[dateStr] ?? [];
+                const hasMood = !!entriesByDate[dateStr]?.length;
                 const isToday = dateStr === todayStr;
                 const isSelected = dateStr === selectedDay;
                 const hasVisit = visitDates.has(dateStr);
@@ -167,16 +192,14 @@ export default function Calendar({ data }: Props) {
                     >
                       {day}
                     </span>
-                    {/* Mood dots */}
-                    <div className="flex gap-0.5 flex-wrap justify-center min-h-[8px]">
-                      {dayEntries.slice(0, 3).map((e, i) => (
-                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: EMOTION_MAP[e.emotion].dot }} />
-                      ))}
+                    {/* Mood dot (single, regardless of entry count) */}
+                    <div className="flex gap-0.5 min-h-[8px]">
+                      {hasMood && <div className="w-1.5 h-1.5 rounded-full" style={{ background: MOOD_DOT_COLOR }} />}
                     </div>
                     {/* Event markers */}
                     <div className="flex gap-0.5">
-                      {(hasVisit || isNextVisit) && <div className="w-1.5 h-1.5 rounded-full" style={{ background: isNextVisit ? '#E8A0A8' : '#4A7CCC' }} />}
-                      {(hasSession || isNextTherapy) && <div className="w-1.5 h-1.5 rounded-full" style={{ background: isNextTherapy ? '#E8A0A8' : '#7C6BE8' }} />}
+                      {(hasVisit || isNextVisit) && <div className="w-1.5 h-1.5 rounded-full" style={{ background: isNextVisit ? UPCOMING_DOT_COLOR : HOSPITAL_DOT_COLOR }} />}
+                      {(hasSession || isNextTherapy) && <div className="w-1.5 h-1.5 rounded-full" style={{ background: isNextTherapy ? UPCOMING_DOT_COLOR : THERAPY_DOT_COLOR }} />}
                     </div>
                   </button>
                 );
@@ -190,14 +213,14 @@ export default function Calendar({ data }: Props) {
                   {new Date(selectedDay + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })}
                 </p>
 
-                {selectedEntries.length === 0 && !visitDates.has(selectedDay) && !sessionDates.has(selectedDay) && (
+                {selectedEntries.length === 0 && !visitDates.has(selectedDay) && !sessionDates.has(selectedDay) && !selectedIsNextVisit && !selectedIsNextTherapy && (
                   <p className="text-sm text-[#9B94A8]">기록 없음</p>
                 )}
 
                 {selectedEntries.map(e => {
-                  const def = EMOTION_MAP[e.emotion];
+                  const def = getEmotionCard(data.emotionCards, e.emotion);
                   return (
-                    <div key={e.id} className="flex items-start gap-3 mb-3 last:mb-0">
+                    <button key={e.id} onClick={() => setDetailEntry(e)} className="w-full flex items-start gap-3 mb-3 last:mb-0 text-left transition-all active:scale-[0.99]">
                       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: def.bg }}>
                         {def.emoji}
                       </div>
@@ -210,7 +233,7 @@ export default function Calendar({ data }: Props) {
                         </div>
                         {e.note && <p className="text-xs text-[#6B6470] mt-1">{e.note}</p>}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
 
@@ -224,6 +247,18 @@ export default function Calendar({ data }: Props) {
                   <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: '1px solid #F0EAFF' }}>
                     <span className="text-base">💬</span>
                     <span className="text-xs font-semibold text-[#5541C0]">심리 상담일</span>
+                  </div>
+                )}
+                {selectedIsNextVisit && (
+                  <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: '1px solid #F0EAFF' }}>
+                    <span className="text-base">📅</span>
+                    <span className="text-xs font-semibold" style={{ color: '#B5606A' }}>예정된 진료</span>
+                  </div>
+                )}
+                {selectedIsNextTherapy && (
+                  <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: '1px solid #F0EAFF' }}>
+                    <span className="text-base">📅</span>
+                    <span className="text-xs font-semibold" style={{ color: '#B5606A' }}>예정된 상담</span>
                   </div>
                 )}
               </div>
@@ -247,13 +282,24 @@ export default function Calendar({ data }: Props) {
                       contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12 }}
                       formatter={(v) => [typeof v === 'number' && v > 0 ? `+${v}` : v, '기분 점수']}
                     />
-                    <Line type="monotone" dataKey="score" stroke="#7C6BE8" strokeWidth={2.5} dot={{ fill: '#7C6BE8', r: 3 }} connectNulls={false} />
+                    <Line type="monotone" dataKey="score" stroke="#7C6BE8" strokeWidth={2.5} dot={{ fill: '#7C6BE8', r: 3 }} connectNulls={true} />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
                 <p className="text-sm text-[#9B94A8] text-center py-8">아직 데이터가 부족해요</p>
               )}
             </div>
+
+            {/* Pattern analysis */}
+            {pattern && (
+              <div className="rounded-2xl p-4 mb-4" style={{ background: 'linear-gradient(135deg, #EDE9FF 0%, #F4F0FF 100%)' }}>
+                <p className="text-sm font-bold text-[#3B2D8F] mb-1">🔁 감정 패턴 분석</p>
+                <p className="text-sm text-[#5541C0] leading-relaxed">
+                  약 <span className="font-black">{pattern.cycleDays}일</span> 주기로 기분이 오르내리는 경향이 보여요.
+                </p>
+                <p className="text-xs text-[#9B8CE8] mt-1">기록이 쌓일수록 더 정확해져요. (참고용 추정치예요)</p>
+              </div>
+            )}
 
             {/* Emotion frequency */}
             <div className="bg-white rounded-2xl p-4 mb-4">
@@ -303,20 +349,82 @@ export default function Calendar({ data }: Props) {
 
             {/* Summary stats */}
             <div className="grid grid-cols-3 gap-3 mb-4">
-              {[
-                { label: '총 기록', value: data.moodEntries.length + '개' },
-                { label: '진료 횟수', value: data.hospital.visits.length + '회' },
-                { label: '상담 회기', value: data.therapyPrograms.reduce((s, p) => s + p.sessions.length, 0) + '회' },
-              ].map(s => (
-                <div key={s.label} className="bg-white rounded-2xl p-3 text-center">
-                  <p className="text-xl font-black text-[#7C6BE8]">{s.value}</p>
-                  <p className="text-xs text-[#9B94A8] font-semibold mt-0.5">{s.label}</p>
-                </div>
-              ))}
+              <button onClick={() => setShowAllEntries(true)} className="bg-white rounded-2xl p-3 text-center transition-all active:scale-95">
+                <p className="text-xl font-black text-[#7C6BE8]">{data.moodEntries.length}개</p>
+                <p className="text-xs text-[#9B94A8] font-semibold mt-0.5">총 기록</p>
+              </button>
+              <div className="bg-white rounded-2xl p-3 text-center">
+                <p className="text-xl font-black text-[#7C6BE8]">{data.hospital.visits.length}회</p>
+                <p className="text-xs text-[#9B94A8] font-semibold mt-0.5">진료 횟수</p>
+              </div>
+              <div className="bg-white rounded-2xl p-3 text-center">
+                <p className="text-xl font-black text-[#7C6BE8]">{data.therapyPrograms.reduce((s, p) => s + p.sessions.length, 0)}회</p>
+                <p className="text-xs text-[#9B94A8] font-semibold mt-0.5">상담 회기</p>
+              </div>
             </div>
           </>
         )}
       </div>
+
+      {showYearPicker && (
+        <Sheet onClose={() => setShowYearPicker(false)}>
+          <h3 className="text-lg font-black text-[#2A2730] mb-4">연도 선택</h3>
+          <div className="grid grid-cols-4 gap-2">
+            {yearOptions.map(y => (
+              <button
+                key={y}
+                onClick={() => { setYear(y); setShowYearPicker(false); }}
+                className="py-3 rounded-xl text-sm font-bold transition-all active:scale-95"
+                style={{
+                  background: y === year ? '#7C6BE8' : '#F7F4F0',
+                  color: y === year ? 'white' : '#2A2730',
+                }}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+
+      {detailEntry && (
+        <Sheet onClose={() => setDetailEntry(null)}>
+          <MoodEntryDetail entry={detailEntry} emotionCards={data.emotionCards} onClose={() => setDetailEntry(null)} />
+        </Sheet>
+      )}
+
+      {showAllEntries && (
+        <FullPage title={`감정기록 전체 (${data.moodEntries.length}개)`} onClose={() => setShowAllEntries(false)}>
+          <div className="space-y-2 pt-2">
+            {data.moodEntries.map(entry => {
+              const def = getEmotionCard(data.emotionCards, entry.emotion);
+              const d = new Date(entry.date);
+              const dateLabel = d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+              return (
+                <button
+                  key={entry.id}
+                  onClick={() => setDetailEntry(entry)}
+                  className="w-full flex items-start gap-3 p-3.5 rounded-2xl bg-white text-left transition-all active:scale-[0.99]"
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0" style={{ background: def.bg }}>
+                    {def.emoji}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold" style={{ color: def.color }}>{def.label}</span>
+                      <span className="text-xs text-[#9B94A8]">{dateLabel}</span>
+                    </div>
+                    {entry.note && <p className="text-xs text-[#6B6470] mt-0.5 line-clamp-1">{entry.note}</p>}
+                  </div>
+                </button>
+              );
+            })}
+            {data.moodEntries.length === 0 && (
+              <p className="text-sm text-[#9B94A8] text-center py-8">아직 기록이 없어요</p>
+            )}
+          </div>
+        </FullPage>
+      )}
     </div>
   );
 }

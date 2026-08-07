@@ -1,4 +1,5 @@
 import type { AppData } from './types';
+import { DEFAULT_EMOTION_CARDS } from './emotions';
 
 const KEY = 'moodtracker_v1';
 
@@ -8,6 +9,7 @@ const daysLater = (n: number) => new Date(today.getTime() + 86400000 * n).toISOS
 const dateStr = (iso: string) => iso.split('T')[0];
 
 const defaultData: AppData = {
+  emotionCards: DEFAULT_EMOTION_CARDS,
   moodEntries: [
     {
       id: 'me1',
@@ -89,7 +91,11 @@ const defaultData: AppData = {
     },
   ],
   hospital: {
-    diagnoses: ['주요우울장애 (F32.1)', 'ADHD 복합형 (F90.0)'],
+    diagnoses: [
+      { id: 'dx1', name: '주요우울장애 (F32.1)' },
+      { id: 'dx2', name: 'ADHD 복합형 (F90.0)' },
+    ],
+    documents: [],
     medications: [
       { id: 'md1', name: '에스시탈로프람 10mg', dosage: '1정', frequency: '매일 아침 식후', startDate: '2024-03-15', active: true },
       { id: 'md2', name: '아토목세틴 40mg', dosage: '1정', frequency: '매일 아침 식후', startDate: '2024-06-01', active: true },
@@ -169,11 +175,39 @@ const defaultData: AppData = {
   ],
 };
 
+function migrate(raw: any): AppData {
+  const data = { ...raw };
+
+  if (!Array.isArray(data.emotionCards) || data.emotionCards.length === 0) {
+    data.emotionCards = DEFAULT_EMOTION_CARDS;
+  }
+
+  if (!data.hospital) data.hospital = { diagnoses: [], medications: [], visits: [], documents: [] };
+  if (!Array.isArray(data.hospital.documents)) data.hospital.documents = [];
+  if (!Array.isArray(data.hospital.medications)) data.hospital.medications = [];
+  if (!Array.isArray(data.hospital.visits)) data.hospital.visits = [];
+
+  if (!Array.isArray(data.hospital.diagnoses)) {
+    data.hospital.diagnoses = [];
+  } else if (data.hospital.diagnoses.length > 0 && typeof data.hospital.diagnoses[0] === 'string') {
+    // legacy format: string[] -> Diagnosis[]
+    data.hospital.diagnoses = data.hospital.diagnoses.map((name: string, i: number) => ({
+      id: `dx-legacy-${i}`,
+      name,
+    }));
+  }
+
+  if (!Array.isArray(data.moodEntries)) data.moodEntries = [];
+  if (!Array.isArray(data.therapyPrograms)) data.therapyPrograms = [];
+
+  return data as AppData;
+}
+
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaultData;
-    return JSON.parse(raw) as AppData;
+    return migrate(JSON.parse(raw));
   } catch {
     return defaultData;
   }

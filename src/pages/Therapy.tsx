@@ -1,24 +1,11 @@
 import { useState } from 'react';
 import type { AppData, TherapyProgram, TherapySession } from '../types';
+import Sheet from '../components/Sheet';
+import FullPage from '../components/FullPage';
 
 interface Props {
   data: AppData;
   onUpdate: (d: AppData) => void;
-}
-
-interface SheetProps { children: React.ReactNode; onClose: () => void; }
-function Sheet({ children, onClose }: SheetProps) {
-  return (
-    <div className="fixed inset-0 z-50 fade-in" style={{ background: 'rgba(42,39,48,0.5)' }} onClick={onClose}>
-      <div
-        className="absolute bottom-0 left-1/2 w-full max-w-[430px] -translate-x-1/2 rounded-t-3xl bg-white p-6 pb-10 max-h-[90vh] overflow-y-auto sheet-enter"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="w-10 h-1 rounded-full bg-[#E8E3DD] mx-auto mb-6" />
-        {children}
-      </div>
-    </div>
-  );
 }
 
 function AddSessionSheet({ program, onClose, onSave }: {
@@ -88,7 +75,7 @@ function AddProgramSheet({ onClose, onSave }: {
 
   return (
     <>
-      <h3 className="text-lg font-black text-[#2A2730] mb-5">새 상담 시작</h3>
+      <h3 className="text-lg font-black text-[#2A2730] mb-5">새 상담 등록</h3>
       <div className="space-y-4 mb-6">
         <div>
           <label className="block text-sm font-semibold text-[#2A2730] mb-1.5">상담사 이름</label>
@@ -168,11 +155,45 @@ function SessionCard({ session, expanded, onClick }: {
   );
 }
 
+function PastProgramDetail({ program, onClose }: { program: TherapyProgram; onClose: () => void }) {
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const formatDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+  const sorted = [...program.sessions].sort((a, b) => b.sessionNumber - a.sessionNumber);
+
+  return (
+    <FullPage title={program.therapistName} onClose={onClose}>
+      <div className="bg-white rounded-2xl p-4 mb-4 mt-2">
+        <p className="text-sm font-bold text-[#2A2730]">{program.institution}</p>
+        <p className="text-xs text-[#9B94A8] mt-1">
+          {formatDate(program.startDate)} — {program.endDate ? formatDate(program.endDate) : '진행중'}
+        </p>
+        <p className="text-xs text-[#9B94A8] mt-1">총 {program.sessions.length}회기</p>
+      </div>
+      {sorted.length === 0 ? (
+        <p className="text-sm text-[#9B94A8] text-center py-8">회기 기록이 없어요</p>
+      ) : (
+        <div className="space-y-2">
+          {sorted.map(s => (
+            <SessionCard
+              key={s.id}
+              session={s}
+              expanded={expandedSession === s.id}
+              onClick={() => setExpandedSession(expandedSession === s.id ? null : s.id)}
+            />
+          ))}
+        </div>
+      )}
+    </FullPage>
+  );
+}
+
 export default function Therapy({ data, onUpdate }: Props) {
   const [showAddSession, setShowAddSession] = useState(false);
   const [showAddProgram, setShowAddProgram] = useState(false);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [showPast, setShowPast] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [viewingPast, setViewingPast] = useState<TherapyProgram | null>(null);
 
   const activeProgram = data.therapyPrograms.find(p => p.active);
   const pastPrograms = data.therapyPrograms.filter(p => !p.active);
@@ -197,6 +218,17 @@ export default function Therapy({ data, onUpdate }: Props) {
     onUpdate({ ...data, therapyPrograms: [...programs, { id: crypto.randomUUID(), sessions: [], ...p }] });
   };
 
+  const handleEndProgram = () => {
+    if (!activeProgram) return;
+    onUpdate({
+      ...data,
+      therapyPrograms: data.therapyPrograms.map(p =>
+        p.id === activeProgram.id ? { ...p, active: false, endDate: new Date().toISOString().split('T')[0] } : p
+      ),
+    });
+    setConfirmEnd(false);
+  };
+
   const formatDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
   const daysUntil = (iso: string) => {
     const d = new Date(iso + 'T00:00:00');
@@ -213,17 +245,18 @@ export default function Therapy({ data, onUpdate }: Props) {
   return (
     <div className="flex flex-col h-full">
       <div className="px-5 pt-6 pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-black text-[#2A2730]" style={{ fontFamily: "'DM Serif Display', serif" }}>심리 상담</h1>
-          {activeProgram ? (
-            <button onClick={() => setShowAddSession(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95" style={{ background: '#7C6BE8' }}>
-              + 회기 기록
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {activeProgram && (
+              <button onClick={() => setShowAddSession(true)} className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95" style={{ background: '#7C6BE8' }}>
+                + 회기 기록
+              </button>
+            )}
+            <button onClick={() => setShowAddProgram(true)} className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95" style={{ background: '#EDE9FF', color: '#7C6BE8' }}>
+              + 새 상담
             </button>
-          ) : (
-            <button onClick={() => setShowAddProgram(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95" style={{ background: '#7C6BE8' }}>
-              + 상담 시작
-            </button>
-          )}
+          </div>
         </div>
       </div>
 
@@ -276,6 +309,18 @@ export default function Therapy({ data, onUpdate }: Props) {
                 )}
               </div>
             )}
+
+            {confirmEnd ? (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-xs text-white/80 flex-1">이 상담을 종료할까요?</span>
+                <button onClick={() => setConfirmEnd(false)} className="text-xs font-bold text-white px-2.5 py-1.5 rounded-lg bg-white/20">취소</button>
+                <button onClick={handleEndProgram} className="text-xs font-bold text-[#7C6BE8] px-2.5 py-1.5 rounded-lg bg-white">종료</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmEnd(true)} className="mt-3 text-xs font-semibold text-white/70 underline">
+                상담 종료
+              </button>
+            )}
           </div>
         ) : (
           <div className="bg-white rounded-2xl p-8 text-center">
@@ -320,10 +365,10 @@ export default function Therapy({ data, onUpdate }: Props) {
             {showPast && (
               <div className="space-y-3">
                 {pastPrograms.map(p => (
-                  <div key={p.id} className="bg-white rounded-2xl p-4">
+                  <button key={p.id} onClick={() => setViewingPast(p)} className="w-full bg-white rounded-2xl p-4 text-left transition-all active:scale-[0.99]">
                     <div className="flex items-start gap-3">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0" style={{ background: '#F2EFED' }}>💬</div>
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-[#9B94A8]">{p.therapistName}</p>
                         <p className="text-xs text-[#C5BFC8]">{p.institution}</p>
                         <p className="text-xs text-[#C5BFC8] mt-0.5">
@@ -331,8 +376,9 @@ export default function Therapy({ data, onUpdate }: Props) {
                         </p>
                         <p className="text-xs text-[#9B94A8] mt-1">총 {p.sessions.length}회기</p>
                       </div>
+                      <span className="text-[#C5BFC8] text-sm flex-shrink-0">›</span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -350,6 +396,7 @@ export default function Therapy({ data, onUpdate }: Props) {
           <AddProgramSheet onClose={() => setShowAddProgram(false)} onSave={handleAddProgram} />
         </Sheet>
       )}
+      {viewingPast && <PastProgramDetail program={viewingPast} onClose={() => setViewingPast(null)} />}
     </div>
   );
 }

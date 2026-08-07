@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import type { AppData, MoodEntry, EmotionKey } from '../types';
-import { EMOTIONS, EMOTION_MAP, MOOD_QUESTIONS } from '../emotions';
+import type { AppData, MoodEntry, EmotionCard } from '../types';
+import { MOOD_QUESTIONS, getEmotionCard } from '../emotions';
+import Sheet from '../components/Sheet';
+import MoodEntryDetail from '../components/MoodEntryDetail';
 
 interface Props {
   data: AppData;
@@ -10,12 +12,11 @@ interface Props {
 
 type Step = 'select' | 'detail' | 'done';
 
-function MoodSheet({ emotion, onClose, onSave }: {
-  emotion: EmotionKey;
+function MoodSheet({ def, onClose, onSave }: {
+  def: EmotionCard;
   onClose: () => void;
   onSave: (entry: Omit<MoodEntry, 'id' | 'date'>) => void;
 }) {
-  const def = EMOTION_MAP[emotion];
   const [step, setStep] = useState<Step>('select');
   const [intensity, setIntensity] = useState(3);
   const [answers, setAnswers] = useState<string[]>(MOOD_QUESTIONS.map(() => ''));
@@ -23,7 +24,7 @@ function MoodSheet({ emotion, onClose, onSave }: {
 
   const handleSave = () => {
     onSave({
-      emotion,
+      emotion: def.id,
       intensity,
       answers: MOOD_QUESTIONS.map((q, i) => ({ question: q.question, answer: answers[i] })).filter(a => a.answer.trim()),
       note: note.trim() || undefined,
@@ -264,25 +265,11 @@ function QuickTherapySheet({ onClose, onSave }: { onClose: () => void; onSave: (
   );
 }
 
-interface SheetProps { children: React.ReactNode; onClose: () => void; }
-function Sheet({ children, onClose }: SheetProps) {
-  return (
-    <div className="fixed inset-0 z-50 fade-in" style={{ background: 'rgba(42,39,48,0.5)' }} onClick={onClose}>
-      <div
-        className="absolute bottom-0 left-1/2 w-full max-w-[430px] -translate-x-1/2 rounded-t-3xl bg-white p-6 pb-10 max-h-[90vh] overflow-y-auto sheet-enter"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="w-10 h-1 rounded-full bg-[#E8E3DD] mx-auto mb-6" />
-        {children}
-      </div>
-    </div>
-  );
-}
-
 export default function Home({ data, onUpdate, onGoTo }: Props) {
-  const [activeEmotion, setActiveEmotion] = useState<EmotionKey | null>(null);
+  const [activeEmotion, setActiveEmotion] = useState<EmotionCard | null>(null);
   const [showVisit, setShowVisit] = useState(false);
   const [showTherapy, setShowTherapy] = useState(false);
+  const [detailEntry, setDetailEntry] = useState<MoodEntry | null>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayEntries = data.moodEntries.filter(e => e.date.startsWith(todayStr));
@@ -341,6 +328,17 @@ export default function Home({ data, onUpdate, onGoTo }: Props) {
   const hour = now.getHours();
   const greeting = hour < 12 ? '좋은 아침이에요' : hour < 18 ? '안녕하세요' : '오늘 하루 어떠셨나요';
 
+  // Group recent entries by date for the timeline-style separator display.
+  const recentEntries = data.moodEntries.slice(0, 8);
+  const groups: { dateLabel: string; entries: MoodEntry[] }[] = [];
+  for (const entry of recentEntries) {
+    const d = new Date(entry.date);
+    const dateLabel = d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+    const last = groups[groups.length - 1];
+    if (last && last.dateLabel === dateLabel) last.entries.push(entry);
+    else groups.push({ dateLabel, entries: [entry] });
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -374,13 +372,18 @@ export default function Home({ data, onUpdate, onGoTo }: Props) {
             <p className="text-xs font-bold text-[#9B94A8] uppercase tracking-wider mb-2">오늘 기록</p>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {todayEntries.map(e => {
-                const def = EMOTION_MAP[e.emotion];
+                const def = getEmotionCard(data.emotionCards, e.emotion);
                 return (
-                  <div key={e.id} className="flex items-center gap-2 px-3 py-2 rounded-xl flex-shrink-0" style={{ background: def.bg }}>
+                  <button
+                    key={e.id}
+                    onClick={() => setDetailEntry(e)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl flex-shrink-0 transition-all active:scale-95"
+                    style={{ background: def.bg }}
+                  >
                     <span className="text-base">{def.emoji}</span>
                     <span className="text-xs font-bold" style={{ color: def.color }}>{def.label}</span>
                     <span className="text-xs font-semibold" style={{ color: def.color, opacity: 0.6 }}>{'●'.repeat(e.intensity)}</span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -389,10 +392,10 @@ export default function Home({ data, onUpdate, onGoTo }: Props) {
 
         {/* Emotion grid */}
         <div className="grid grid-cols-3 gap-3 mb-6">
-          {EMOTIONS.map(emotion => (
+          {data.emotionCards.map(emotion => (
             <button
-              key={emotion.key}
-              onClick={() => setActiveEmotion(emotion.key)}
+              key={emotion.id}
+              onClick={() => setActiveEmotion(emotion)}
               className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl transition-all active:scale-95"
               style={{ background: emotion.bg }}
             >
@@ -431,39 +434,49 @@ export default function Home({ data, onUpdate, onGoTo }: Props) {
         </div>
 
         {/* Recent mood entries */}
-        {data.moodEntries.length > 0 && (
+        {groups.length > 0 && (
           <div>
             <p className="text-xs font-bold text-[#9B94A8] uppercase tracking-wider mb-3">최근 기록</p>
-            <div className="space-y-2">
-              {data.moodEntries.slice(0, 5).map(entry => {
-                const def = EMOTION_MAP[entry.emotion];
-                const d = new Date(entry.date);
-                const dateLabel = d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
-                return (
-                  <div key={entry.id} className="flex items-start gap-3 p-3.5 rounded-2xl bg-white">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0" style={{ background: def.bg }}>
-                      {def.emoji}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-bold" style={{ color: def.color }}>{def.label}</span>
-                        <span className="text-xs text-[#9B94A8]">{dateLabel}</span>
-                      </div>
-                      {entry.note && (
-                        <p className="text-xs text-[#6B6470] mt-0.5 line-clamp-2">{entry.note}</p>
-                      )}
-                      {!entry.note && entry.answers[0] && (
-                        <p className="text-xs text-[#6B6470] mt-0.5 line-clamp-1">{entry.answers[0].answer}</p>
-                      )}
-                    </div>
-                    <div className="flex gap-0.5 pt-0.5">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < entry.intensity ? def.dot : '#E8E3DD' }} />
-                      ))}
-                    </div>
+            <div className="space-y-4">
+              {groups.map(group => (
+                <div key={group.dateLabel}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex-1 h-px" style={{ background: '#E8E3DD' }} />
+                    <span className="text-xs font-bold text-[#9B94A8] whitespace-nowrap">{group.dateLabel}</span>
+                    <div className="flex-1 h-px" style={{ background: '#E8E3DD' }} />
                   </div>
-                );
-              })}
+                  <div className="space-y-2">
+                    {group.entries.map(entry => {
+                      const def = getEmotionCard(data.emotionCards, entry.emotion);
+                      return (
+                        <button
+                          key={entry.id}
+                          onClick={() => setDetailEntry(entry)}
+                          className="w-full flex items-start gap-3 p-3.5 rounded-2xl bg-white text-left transition-all active:scale-[0.99]"
+                        >
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0" style={{ background: def.bg }}>
+                            {def.emoji}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-bold" style={{ color: def.color }}>{def.label}</span>
+                            {entry.note && (
+                              <p className="text-xs text-[#6B6470] mt-0.5 line-clamp-2">{entry.note}</p>
+                            )}
+                            {!entry.note && entry.answers[0] && (
+                              <p className="text-xs text-[#6B6470] mt-0.5 line-clamp-1">{entry.answers[0].answer}</p>
+                            )}
+                          </div>
+                          <div className="flex gap-0.5 pt-0.5">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i < entry.intensity ? def.dot : '#E8E3DD' }} />
+                            ))}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -473,7 +486,7 @@ export default function Home({ data, onUpdate, onGoTo }: Props) {
       {activeEmotion && (
         <Sheet onClose={() => setActiveEmotion(null)}>
           <MoodSheet
-            emotion={activeEmotion}
+            def={activeEmotion}
             onClose={() => setActiveEmotion(null)}
             onSave={handleSaveMood}
           />
@@ -487,6 +500,11 @@ export default function Home({ data, onUpdate, onGoTo }: Props) {
       {showTherapy && (
         <Sheet onClose={() => setShowTherapy(false)}>
           <QuickTherapySheet onClose={() => setShowTherapy(false)} onSave={handleSaveTherapy} />
+        </Sheet>
+      )}
+      {detailEntry && (
+        <Sheet onClose={() => setDetailEntry(null)}>
+          <MoodEntryDetail entry={detailEntry} emotionCards={data.emotionCards} onClose={() => setDetailEntry(null)} />
         </Sheet>
       )}
     </div>

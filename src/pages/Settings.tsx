@@ -1,15 +1,102 @@
 import { useState } from 'react';
-import type { AppData } from '../types';
+import type { AppData, EmotionCard } from '../types';
 import { loadData } from '../store';
+import Sheet from '../components/Sheet';
 
 interface Props {
   data: AppData;
   onUpdate: (d: AppData) => void;
 }
 
+function CardFormSheet({ title, initial, onClose, onSave }: {
+  title: string;
+  initial?: EmotionCard;
+  onClose: () => void;
+  onSave: (card: { label: string; emoji: string; color: string }) => void;
+}) {
+  const [label, setLabel] = useState(initial?.label ?? '');
+  const [emoji, setEmoji] = useState(initial?.emoji ?? '🙂');
+  const [color, setColor] = useState(initial?.color ?? '#7C6BE8');
+
+  return (
+    <>
+      <h3 className="text-lg font-black text-[#2A2730] mb-5">{title}</h3>
+      <div className="flex items-center gap-4 mb-5">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl" style={{ background: `${color}22` }}>
+          {emoji || '🙂'}
+        </div>
+        <div className="flex-1">
+          <label className="block text-sm font-semibold text-[#2A2730] mb-1.5">이모지</label>
+          <input
+            value={emoji}
+            onChange={e => setEmoji(e.target.value.slice(0, 4))}
+            placeholder="🙂"
+            className="w-full px-3.5 py-2.5 rounded-xl text-lg outline-none"
+            style={{ background: '#F7F4F0', border: '1.5px solid #E8E3DD' }}
+          />
+        </div>
+      </div>
+      <div className="space-y-4 mb-6">
+        <div>
+          <label className="block text-sm font-semibold text-[#2A2730] mb-1.5">감정 이름</label>
+          <input
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            placeholder="예: 뿌듯해요"
+            className="w-full px-3.5 py-3 rounded-xl text-sm text-[#2A2730] placeholder-[#C5BFC8] outline-none"
+            style={{ background: '#F7F4F0', border: '1.5px solid #E8E3DD' }}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-[#2A2730] mb-1.5">색상</label>
+          <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-full h-12 rounded-xl outline-none" style={{ border: '1.5px solid #E8E3DD' }} />
+        </div>
+      </div>
+      <button
+        onClick={() => { if (label.trim() && emoji.trim()) { onSave({ label: label.trim(), emoji: emoji.trim(), color }); onClose(); } }}
+        disabled={!label.trim() || !emoji.trim()}
+        className="w-full h-14 rounded-2xl font-bold text-white text-base active:scale-95 disabled:opacity-40"
+        style={{ background: '#7C6BE8' }}
+      >
+        저장하기
+      </button>
+    </>
+  );
+}
+
 export default function Settings({ data, onUpdate }: Props) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [exported, setExported] = useState(false);
+  const [showAddCard, setShowAddCard] = useState(false);
+  const [editingCard, setEditingCard] = useState<EmotionCard | null>(null);
+  const [confirmRemoveCard, setConfirmRemoveCard] = useState<string | null>(null);
+
+  const handleAddCard = (c: { label: string; emoji: string; color: string }) => {
+    const newCard: EmotionCard = {
+      id: crypto.randomUUID(),
+      label: c.label,
+      emoji: c.emoji,
+      color: c.color,
+      bg: `${c.color}22`,
+      dot: c.color,
+      direction: -1,
+    };
+    onUpdate({ ...data, emotionCards: [...data.emotionCards, newCard] });
+  };
+
+  const handleUpdateCard = (id: string, c: { label: string; emoji: string; color: string }) => {
+    onUpdate({
+      ...data,
+      emotionCards: data.emotionCards.map(card => card.id === id
+        ? { ...card, label: c.label, emoji: c.emoji, color: c.color, bg: `${c.color}22`, dot: c.color }
+        : card),
+    });
+  };
+
+  const handleRemoveCard = (id: string) => {
+    onUpdate({ ...data, emotionCards: data.emotionCards.filter(c => c.id !== id) });
+    setConfirmRemoveCard(null);
+  };
 
   const handleExport = () => {
     const json = JSON.stringify(data, null, 2);
@@ -111,6 +198,36 @@ export default function Settings({ data, onUpdate }: Props) {
           </button>
         </div>
 
+        {/* Emotion cards */}
+        <div className="bg-white rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-[#2A2730]">🎴 감정카드 관리</p>
+            <button onClick={() => setShowAddCard(true)} className="text-xs font-bold text-[#7C6BE8] px-2.5 py-1 rounded-lg" style={{ background: '#EDE9FF' }}>+ 카드 추가</button>
+          </div>
+          <div className="space-y-2">
+            {data.emotionCards.map(card => (
+              <div key={card.id} className="flex items-center justify-between gap-2 p-3 rounded-xl" style={{ background: '#F7F4F0' }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: card.bg }}>{card.emoji}</div>
+                  <span className="text-sm font-semibold text-[#2A2730] truncate">{card.label}</span>
+                </div>
+                {confirmRemoveCard === card.id ? (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button onClick={() => handleRemoveCard(card.id)} className="text-xs font-bold text-white px-2.5 py-1 rounded-lg" style={{ background: '#E55250' }}>삭제</button>
+                    <button onClick={() => setConfirmRemoveCard(null)} className="text-xs font-bold text-[#9B94A8] px-2.5 py-1 rounded-lg" style={{ background: '#EDEAE6' }}>취소</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button onClick={() => setEditingCard(card)} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#EBF3FF' }}>✏️</button>
+                    <button onClick={() => setConfirmRemoveCard(card.id)} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#FFECEC' }}>🗑️</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-[#9B94A8] mt-3">카드를 삭제해도 과거 기록은 남아요 (삭제된 감정으로 표시).</p>
+        </div>
+
         {/* Info */}
         <div className="bg-white rounded-2xl overflow-hidden">
           <p className="text-xs font-bold text-[#9B94A8] uppercase tracking-wider px-4 pt-4 pb-2">앱 정보</p>
@@ -163,6 +280,22 @@ export default function Settings({ data, onUpdate }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {showAddCard && (
+        <Sheet onClose={() => setShowAddCard(false)}>
+          <CardFormSheet title="카드 추가" onClose={() => setShowAddCard(false)} onSave={handleAddCard} />
+        </Sheet>
+      )}
+      {editingCard && (
+        <Sheet onClose={() => setEditingCard(null)}>
+          <CardFormSheet
+            title="카드 수정"
+            initial={editingCard}
+            onClose={() => setEditingCard(null)}
+            onSave={c => handleUpdateCard(editingCard.id, c)}
+          />
+        </Sheet>
       )}
     </div>
   );
