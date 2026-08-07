@@ -39,3 +39,12 @@ This project uses **Tailwind CSS v4** through the `@tailwindcss/vite` plugin con
 - Use double quotes for strings containing apostrophes (`"We're here to help"`), or escape them in single-quoted strings. An unescaped apostrophe in a single-quoted string breaks the build.
 - Ensure JSX tags are closed and braces are balanced.
 - Export components as default exports.
+
+## Android / APK builds
+
+This app is packaged as an Android APK via Capacitor (`android/` directory, `.github/workflows/build-apk.yml`). **Every APK build must remain installable as an update over the previously installed one** — never ship a build that forces the user to uninstall the app first.
+
+- **Signing key must stay fixed.** `android/app/debug.keystore` is committed to the repo on purpose and wired into `signingConfigs.debug` in `android/app/build.gradle`. Do not delete it, regenerate it, or let a build fall back to an auto-generated debug key (e.g. by removing the `signingConfig` line) — CI runs on a fresh VM each time, so an auto-generated key changes every build and Android refuses to install an APK signed with a different certificate than the one already on the device.
+- **`versionCode` must increase on every build**, never stay equal or go down. It's currently derived from `GITHUB_RUN_NUMBER` in CI (see `build.gradle`) — keep that (or an equivalent monotonic scheme) in place.
+- **`applicationId`** (`app.moodtracker.figmamake`) must never change — a different id is treated as a completely different app, losing the user's on-device data.
+- If you ever switch to a `release` build type or a real Play Store keystore, apply the same rule: generate the signing key once, store/commit it (or a CI secret) so it's reused on every build, and never regenerate it.
